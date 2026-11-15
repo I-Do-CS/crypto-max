@@ -54,7 +54,9 @@ continue waiting; cancellation and non-timeout failures still terminate the task
 `crypto_max.execution_mapping` translates normalized BitPin orders, fills, and native-currency
 balances into Nautilus reconciliation records. `crypto_max.state_store.BitpinStateStore`
 persists order identities, fill IDs, and reconciliation checkpoints in a local SQLite file,
-rejecting conflicting identities and changed duplicate fills.
+rejecting conflicting identities and changed duplicate fills. Execution status and fill report
+generation now writes the observed normalized records through that store before returning them
+to Nautilus.
 
 `crypto_max.execution_gateway.BitpinExecutionGateway` adds the live-write boundary. It requires
 an explicit `write_enabled` instance, checks the authenticated suspension map immediately before

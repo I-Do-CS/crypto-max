@@ -152,7 +152,12 @@ not claim server-side end filtering.
 
 Execution mappings and `BitpinStateStore` are also implemented as pure adapter foundations.
 They preserve native currencies and IDs, enforce the account-balance invariant, deduplicate
-fills, and retain reconciliation state across process restarts.
+fills, and retain reconciliation state across process restarts. The execution client persists
+each order status and fill report before returning it to Nautilus.
+
+BitPin's documented `fetch_my_trades` window covers only the last 24 hours. The execution client
+forwards a requested fill-report start bound in the SDK's millisecond format and preserves the
+SDK error for older requests; older history requires a separately verified order-history mapping.
 
 `BitpinExecutionGateway` is the current write boundary. It requires explicit write enablement,
 checks `fetch_market_suspensions()` immediately before order creation, blocks unknown or true
