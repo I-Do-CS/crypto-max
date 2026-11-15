@@ -102,10 +102,16 @@ class BitpinMarketDataGateway:
         self,
         instrument_id: InstrumentId,
         *,
+        since: int | None = None,
         limit: int | None = None,
     ) -> list[TradeTick]:
         symbol = self._symbol(instrument_id)
-        raw_trades = await self.client.fetch_trades(symbol, limit=limit)
+        if since is None:
+            raw_trades = await self.client.fetch_trades(symbol, limit=limit)
+        else:
+            raw_trades = await self.client.fetch_trades(
+                symbol, since=since, limit=limit
+            )
         return [trade_tick_from_bitpin(trade, instrument_id) for trade in raw_trades]
 
     async def fetch_bars(
@@ -113,14 +119,23 @@ class BitpinMarketDataGateway:
         instrument_id: InstrumentId,
         timeframe: str,
         *,
+        since: int | None = None,
         limit: int | None = None,
     ) -> list[Bar]:
         symbol = self._symbol(instrument_id)
-        raw_candles = await self.client.fetch_ohlcv(
-            symbol,
-            timeframe,
-            limit=limit,
-        )
+        if since is None:
+            raw_candles = await self.client.fetch_ohlcv(
+                symbol,
+                timeframe,
+                limit=limit,
+            )
+        else:
+            raw_candles = await self.client.fetch_ohlcv(
+                symbol,
+                timeframe,
+                since=since,
+                limit=limit,
+            )
         return [
             bar_from_bitpin(candle, instrument_id, timeframe) for candle in raw_candles
         ]

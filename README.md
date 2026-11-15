@@ -6,7 +6,12 @@ Profitability is a later research outcome, not an assumption. The immediate prio
 
 ## Current status
 
-Planning is complete for the first development phase. The first implementation milestone is also complete: a REST read-only probe harness has run successfully against BitPin's public API and the owner-provided authenticated secondary account. No trading orders, cancellations, withdrawals, or other write operations have been sent.
+Planning is complete for the first development phase. A REST read-only probe harness has run
+successfully against BitPin's public API and the owner-provided authenticated secondary account.
+One separately authorized, controlled API order probe was rejected by BitPin because the market
+was reported suspended; no API order was successfully created, and no cancellation or wallet
+write was sent. The owner separately confirmed a successful UI trade, which is evidence of a
+different execution path and is outside this adapter's documented `/api/` surface.
 
 The current local environment has been checked:
 
@@ -35,7 +40,10 @@ and supports full-catalog and requested-instrument loading.
 
 Pure market-data parsers in `crypto_max.market_data` map BitPin trades, candles, order-book
 snapshots, and complete ticker records into Nautilus typed data. Incomplete ticker records
-are rejected explicitly, and order-book snapshots provide the top-of-book quote fallback.
+are rejected explicitly, and order-book snapshots provide the top-of-book quote fallback. The
+Nautilus data client emits the installed runtime's distinct snapshot and depth response types,
+and forwards documented millisecond `since` bounds for historical trades and candles while
+applying the requested end bound to returned typed records.
 
 `crypto_max.market_gateway.BitpinMarketDataGateway` now owns the asynchronous SDK boundary:
 construction is side-effect free, `connect()` loads the provider, REST and WebSocket methods
@@ -59,10 +67,11 @@ the gateway. `BitpinExecutionClient` and its factory now provide account bootstr
 submit/cancel hooks, and REST order/fill reconciliation reports; bulk submit, edit, and
 cancel-all remain explicitly unsupported at the Nautilus-client layer.
 
-The local [BitPin deprecation notice](deprecation-notice.html) deprecates four wallet v1 routes
-in favor of v2 routes: withdrawals, networks, deposit addresses, and deposits. The pinned SDK
-already targets those v2 routes. Wallet automation is outside the current product scope, so no
-runtime change is required; re-check the notice and the SDK spec before enabling wallet features.
+The owner-provided [BitPin wallet deprecation notice](docs/bitpin-wallet-deprecations.md)
+deprecates four wallet v1 routes in favor of v2 routes: withdrawals, networks, deposit
+addresses, and deposits. The pinned SDK already targets those v2 routes. Wallet automation is
+outside the current product scope, so no runtime change is required; re-check the notice and
+the SDK spec before enabling wallet features.
 
 The reference source trees are stored under `references/`:
 
@@ -240,7 +249,7 @@ No successful live write path should be inferred from a read-only test.
 | Recent fills and order history have finite retention windows. | Persist local order and fill records and reconcile after restarts. |
 | BitPin WebSocket queues can drop old updates under load. | Detect gaps or stale state and reconcile from REST rather than assuming lossless delivery. |
 | Custom Python clients have Nautilus runtime constraints, including unsupported Redis/PostgreSQL cache backing. | Keep the first deployment local and design explicit application persistence outside the unsupported core path. |
-| Live write tests involve real capital. | Keep all write probes disabled until an explicit, separately reviewed approval and safety procedure exists. |
+| Live write tests involve real capital. | Keep writes disabled by default and require explicit, separately reviewed approval for each controlled probe. |
 | The market universe can change and historical “promising” performance can be misleading. | Keep market eligibility as a separate, evidence-based policy with no look-ahead assumptions. |
 
 ## Initial integration acceptance criteria

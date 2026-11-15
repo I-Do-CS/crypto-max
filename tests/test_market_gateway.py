@@ -38,19 +38,27 @@ class FakeAsyncBitpin:
         return self.order_book
 
     async def fetch_trades(
-        self, symbol: str, limit: int | None = None
+        self,
+        symbol: str,
+        since: int | None = None,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         assert symbol == "BTC/IRT"
+        if since is not None:
+            assert since == 1_000
         return self.trades[:limit] if limit is not None else self.trades
 
     async def fetch_ohlcv(
         self,
         symbol: str,
         timeframe: str,
+        since: int | None = None,
         limit: int | None = None,
     ) -> list[list[Any]]:
         assert symbol == "BTC/IRT"
         assert timeframe == "1m"
+        if since is not None:
+            assert since == 1_000
         return self.candles[:limit] if limit is not None else self.candles
 
     async def watch_order_book(
@@ -97,8 +105,8 @@ def test_gateway_lifecycle_and_typed_rest_data() -> None:
     async def run() -> None:
         await gateway.connect()
         quote = await gateway.fetch_quote(INSTRUMENT_ID)
-        trades = await gateway.fetch_trades(INSTRUMENT_ID, limit=2)
-        bars = await gateway.fetch_bars(INSTRUMENT_ID, "1m", limit=2)
+        trades = await gateway.fetch_trades(INSTRUMENT_ID, since=1_000, limit=2)
+        bars = await gateway.fetch_bars(INSTRUMENT_ID, "1m", since=1_000, limit=2)
         assert str(quote.instrument_id) == str(INSTRUMENT_ID)
         assert len(trades) == 2
         assert len(bars) == 2

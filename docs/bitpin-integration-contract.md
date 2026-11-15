@@ -85,7 +85,8 @@ and keeps the SDK's raw `info` payload for diagnostics and replay fixtures.
 | ticker `bid`, `ask`, sizes, timestamp | `QuoteTick` when complete | Emit only with valid bid/ask/size values; current BitPin responses omit these fields, so use an order-book snapshot for quotes. |
 | public trade `price`, `amount`, `side`, `id` | `TradeTick` | Use the BitPin trade ID; map aggressor side only after confirming BitPin side semantics. |
 | OHLCV row | `Bar` with an explicit `BarType` | Keep the requested BitPin timeframe and external aggregation source. |
-| REST order-book snapshot | snapshot/depth output accepted by the Nautilus book engine | Carry `nonce` when present; mark missing sequence data as a recovery concern. |
+| REST order-book snapshot | `BookResponse` containing a mutable `OrderBook` | Carry `nonce` when present; mark missing sequence data as a recovery concern. |
+| REST order-book depth | `BookDepthResponse` containing a sequence of `OrderBookDepth` snapshots | Preserve the depth snapshot sequence and do not emit it as a mutable book. |
 | WebSocket ticker/trade/book/candle update | corresponding streaming output | Track subscription state and resubscribe after reconnect. |
 
 The first implementation must support public REST bootstrap and deterministic replay before
@@ -142,6 +143,11 @@ starts in `_connect`, is supervised with the runtime task API, and closes in `_d
 The current implementation has a standalone `BitpinMarketDataGateway` at the SDK boundary and
 a v2 `BitpinDataClient` for typed market-data hooks. Their lifecycle and typed REST/WebSocket
 mappings are proven with fixture-backed tests before full node integration is exercised.
+
+Historical trade and candle requests forward Nautilus's nanosecond start window as the SDK's
+documented millisecond `since` parameter and filter returned typed records by the requested end
+window. The SDK does not expose an end parameter for these public methods, so the adapter does
+not claim server-side end filtering.
 
 Execution mappings and `BitpinStateStore` are also implemented as pure adapter foundations.
 They preserve native currencies and IDs, enforce the account-balance invariant, deduplicate

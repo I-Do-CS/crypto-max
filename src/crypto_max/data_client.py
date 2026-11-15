@@ -214,7 +214,13 @@ class BitpinDataClient(MarketDataClient):
     async def _request_trades(self, request: live.RequestTrades) -> None:
         data = await self._gateway.fetch_trades(
             request.instrument_id,
+            since=_since_ms(getattr(request, "start_ns", None)),
             limit=request.limit,
+        )
+        data = _filter_time_window(
+            data,
+            start_ns=getattr(request, "start_ns", None),
+            end_ns=getattr(request, "end_ns", None),
         )
         response = live.TradesResponse(
             client_id=self.client_id,
@@ -234,7 +240,13 @@ class BitpinDataClient(MarketDataClient):
         data = await self._gateway.fetch_bars(
             request.bar_type.instrument_id,
             timeframe,
+            since=_since_ms(getattr(request, "start_ns", None)),
             limit=request.limit,
+        )
+        data = _filter_time_window(
+            data,
+            start_ns=getattr(request, "start_ns", None),
+            end_ns=getattr(request, "end_ns", None),
         )
         response = live.BarsResponse(
             client_id=self.client_id,
@@ -315,3 +327,31 @@ def _timeframe_from_bar_type(bar_type: BarType) -> str:
         return mapping[(aggregation, spec.step)]
     except KeyError as exc:
         raise ValueError(f"unsupported BitPin bar type: {bar_type}") from exc
+
+
+def _since_ms(start_ns: int | None) -> int | None:
+    """Convert a Nautilus nanosecond window start to the SDK's millisecond input."""
+
+    if start_ns is None:
+        return None
+    if start_ns < 0:
+        raise ValueError("historical request start must be non-negative")
+    return start_ns // 1_000_000
+
+
+def _filter_time_window(
+    data: list[Any],
+    *,
+    start_ns: int | None,
+    end_ns: int | None,
+) -> list[Any]:
+    """Apply Nautilus's inclusive request window to already typed records."""
+
+    if start_ns is None and end_ns is None:
+        return data
+    return [
+        item
+        for item in data
+        if (start_ns is None or item.ts_event >= start_ns)
+        and (end_ns is None or item.ts_event <= end_ns)
+    ]
