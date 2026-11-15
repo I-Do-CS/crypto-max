@@ -1,0 +1,30 @@
+[project]
+name = "crypto-max"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "I-Do-CS", email = "idocs4aliving@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "bitpin-sdk[ws]==0.2.0",
+    "nautilus-trader==2.0.0rc9",
+    "numpy>=2.5.4",
+    "pandas>=3.1.1",
+    "pyarrow>=26.0.1",
+]
+
+[project.scripts]
+crypto-max = "crypto_max:main"
+
+[build-system]
+requires = ["uv_build>=0.13.8,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "ruff>=0.17.5",
+]
