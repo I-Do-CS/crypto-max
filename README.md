@@ -48,6 +48,8 @@ applying the requested end bound to returned typed records.
 `crypto_max.market_gateway.BitpinMarketDataGateway` now owns the asynchronous SDK boundary:
 construction is side-effect free, `connect()` loads the provider, REST and WebSocket methods
 return typed Nautilus data, and `close()` releases only resources created by the gateway.
+The data-client stream loops treat the SDK's documented `RequestTimeout` as a quiet interval and
+continue waiting; cancellation and non-timeout failures still terminate the task for supervision.
 
 `crypto_max.execution_mapping` translates normalized BitPin orders, fills, and native-currency
 balances into Nautilus reconciliation records. `crypto_max.state_store.BitpinStateStore`

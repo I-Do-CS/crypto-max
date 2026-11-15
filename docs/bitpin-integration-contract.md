@@ -93,7 +93,8 @@ The first implementation must support public REST bootstrap and deterministic re
 depending on WebSocket delivery. A dropped, stale, or non-monotonic book/order update causes
 REST reconciliation rather than silent continuation. The first public WebSocket probe received
 book and candle updates but timed out on ticker and trade updates within ten seconds; this is
-an observation window result, not a capability declaration.
+an observation window result, not a capability declaration. The adapter treats the SDK's
+documented `RequestTimeout` as a quiet interval and keeps each public stream task alive.
 
 ## Execution and account state
 
