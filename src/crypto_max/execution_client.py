@@ -250,14 +250,23 @@ class BitpinExecutionClient(ExecutionClient):
     ) -> list[model.FillReport]:
         reports = []
         for trade in await self._gateway.client.fetch_my_trades(limit=250):
-            reports.append(
-                fill_report_from_bitpin(
-                    trade,
-                    account_id=self.account_id,
-                    instrument_id=self._instrument_id_for_symbol(str(trade["symbol"])),
-                    ts_init=self.clock.timestamp_ns(),
-                )
+            instrument_id = self._instrument_id_for_symbol(str(trade["symbol"]))
+            report = fill_report_from_bitpin(
+                trade,
+                account_id=self.account_id,
+                instrument_id=instrument_id,
+                ts_init=self.clock.timestamp_ns(),
             )
+            self._gateway.state_store.record_fill(
+                venue_fill_id=str(trade["id"]),
+                venue_order_id=(
+                    str(trade["order"]) if trade.get("order") is not None else None
+                ),
+                instrument_id=str(instrument_id),
+                payload=dict(trade),
+                event_time_ns=report.ts_event,
+            )
+            reports.append(report)
         return reports
 
     @override
