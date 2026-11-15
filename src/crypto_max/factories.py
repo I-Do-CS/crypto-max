@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from nautilus_trader.live.clients import DataClientFactory
+from nautilus_trader.live.clients import DataClientFactory, ExecutionClientFactory
 from nautilus_trader.model import AccountId
 
 from .data_client import BitpinDataClient
@@ -47,7 +47,7 @@ class BitpinDataClientFactory(DataClientFactory):
         )
 
 
-class BitpinExecutionClientFactory:
+class BitpinExecutionClientFactory(ExecutionClientFactory):
     """Construct the BitPin execution client with explicit write configuration."""
 
     @staticmethod
