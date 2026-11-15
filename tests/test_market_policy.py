@@ -36,3 +36,8 @@ def test_all_suspended_markets_are_classified_as_api_maintenance() -> None:
             "BTC/USDT",
             {"BTC/USDT": True, "USDT/IRT": True},
         )
+
+
+def test_malformed_suspension_status_is_blocked_without_truthiness_coercion() -> None:
+    with pytest.raises(MarketSuspensionError, match="expected a boolean"):
+        require_orderable("BTC/USDT", {"BTC/USDT": "false"})  # type: ignore[dict-item]

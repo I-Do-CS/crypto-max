@@ -36,9 +36,13 @@ def require_orderable(symbol: str, suspensions: dict[str, bool]) -> str:
     safety gate, separate from the broader market-eligibility policy.
     """
 
-    normalized = {
-        canonical_product_symbol(key): bool(value) for key, value in suspensions.items()
-    }
+    normalized: dict[str, bool] = {}
+    for key, value in suspensions.items():
+        if not isinstance(value, bool):
+            raise MarketSuspensionError(
+                f"invalid suspension status for {key!r}; expected a boolean"
+            )
+        normalized[canonical_product_symbol(key)] = value
     canonical = canonical_product_symbol(symbol)
     if normalized and all(normalized.values()):
         raise BitpinApiMaintenanceError(
