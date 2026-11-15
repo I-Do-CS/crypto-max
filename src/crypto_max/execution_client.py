@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, override
+from typing import Any, Literal, override
 
 from bitpin_sdk import errors as bitpin_errors
 from nautilus_trader import live, model
@@ -26,7 +26,32 @@ from .execution_mapping import (
     fill_report_from_bitpin,
     order_status_report_from_bitpin,
 )
-from .market_policy import canonical_product_symbol, native_market_id
+from .market_policy import (
+    MarketSuspensionError,
+    canonical_product_symbol,
+    native_market_id,
+)
+
+SubmissionErrorKind = Literal["denied", "rejected", "unknown"]
+
+
+def classify_submission_error(error: Exception) -> SubmissionErrorKind:
+    """Classify deterministic order failures without hiding ambiguous transport outcomes."""
+
+    if isinstance(error, MarketSuspensionError):
+        return "denied"
+    if isinstance(
+        error,
+        (
+            ExecutionMappingError,
+            bitpin_errors.BadRequest,
+            bitpin_errors.InsufficientFunds,
+            bitpin_errors.InvalidOrder,
+            bitpin_errors.PermissionDenied,
+        ),
+    ):
+        return "rejected"
+    return "unknown"
 
 
 class BitpinExecutionClient(ExecutionClient):
@@ -111,11 +136,17 @@ class BitpinExecutionClient(ExecutionClient):
                 client_order_id=str(order.client_order_id),
                 params=dict(command.params or {}),
             )
-        except (ExecutionMappingError, bitpin_errors.InvalidOrder) as exc:
-            self.generate_order_rejected(
-                order, str(exc), self.clock.timestamp_ns(), False
-            )
-            return
+        except Exception as exc:
+            kind = classify_submission_error(exc)
+            if kind == "denied":
+                self.generate_order_denied(order, str(exc))
+                return
+            if kind == "rejected":
+                self.generate_order_rejected(
+                    order, str(exc), self.clock.timestamp_ns(), False
+                )
+                return
+            raise
         self.generate_order_submitted(order)
         self.generate_order_accepted(
             order,
