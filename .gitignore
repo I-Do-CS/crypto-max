@@ -12,6 +12,7 @@ wheels/
 references/
 data/
 artifacts/
+.bitpin-probe/
 .env
 .env.*
 !.env.example

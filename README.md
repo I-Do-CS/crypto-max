@@ -6,7 +6,7 @@ Profitability is a later research outcome, not an assumption. The immediate prio
 
 ## Current status
 
-Planning is complete for the first development phase. No BitPin credentials have been read, no live API calls have been made, and no trading orders have been sent.
+Planning is complete for the first development phase. The first implementation milestone is also complete: a REST read-only probe harness has run successfully against BitPin's public API and the owner-provided authenticated secondary account. No trading orders, cancellations, withdrawals, or other write operations have been sent.
 
 The current local environment has been checked:
 
@@ -16,10 +16,98 @@ The current local environment has been checked:
 - `uv pip check` passes
 - Nautilus custom Python adapter imports are available
 
+The probe harness is available as `crypto-max-probe`. It reads credentials only at runtime from `~/bitpin/api-key.txt` and `~/bitpin/secret-key.txt`, writes secret-redacted captures under the gitignored `data/bitpin-probes/` directory with mode `0600`, and records SDK version, endpoint parameters, timing, errors, normalized results, and raw payloads retained by the SDK. Optional public WebSocket capture uses the SDK's asynchronous client and records stream timeouts; richer HTTP response metadata, pagination evidence, and rate-limit observations remain subsequent probe work.
+
+The current mapping contract is maintained in [docs/bitpin-integration-contract.md](docs/bitpin-integration-contract.md). It separates confirmed SDK/Nautilus mappings from exchange behavior that still requires evidence.
+
+Pure currency and spot-instrument mappings are implemented in `crypto_max.mapping` and
+validated against the captured `IRT`, `USDT`, `BTC`, `USDT/IRT`, `BTC/IRT`, and `BTC/USDT`
+records. The mapping registers `IRT` as a custom fiat currency before constructing
+`CurrencyPair` instruments and preserves BitPin's native underscore identifiers.
+
+The fixture-backed `BitpinInstrumentProvider` is implemented in
+`crypto_max.instrument_provider`. It has no constructor-time network side effects, accepts
+recorded data or async SDK loaders, registers currencies independently of market filters,
+and supports full-catalog and requested-instrument loading.
+
+Pure market-data parsers in `crypto_max.market_data` map BitPin trades, candles, order-book
+snapshots, and complete ticker records into Nautilus typed data. Incomplete ticker records
+are rejected explicitly, and order-book snapshots provide the top-of-book quote fallback.
+
+`crypto_max.market_gateway.BitpinMarketDataGateway` now owns the asynchronous SDK boundary:
+construction is side-effect free, `connect()` loads the provider, REST and WebSocket methods
+return typed Nautilus data, and `close()` releases only resources created by the gateway.
+
+`crypto_max.execution_mapping` translates normalized BitPin orders, fills, and native-currency
+balances into Nautilus reconciliation records. `crypto_max.state_store.BitpinStateStore`
+persists order identities, fill IDs, and reconciliation checkpoints in a local SQLite file,
+rejecting conflicting identities and changed duplicate fills.
+
+`crypto_max.execution_gateway.BitpinExecutionGateway` adds the live-write boundary. It requires
+an explicit `write_enabled` instance, checks the authenticated suspension map immediately before
+each non-idempotent submission, blocks `true` or missing flags, and persists successful order
+identities. The suspended-market probe exercised the real rejection path; no successful live
+order has been placed.
+
+The first Nautilus v2 `BitpinDataClient` and `BitpinDataClientFactory` are wired in
+`crypto_max.data_client` and `crypto_max.factories`. They bootstrap instruments, answer typed
+historical requests, and supervise public quote, trade, book-snapshot, and bar streams through
+the gateway. `BitpinExecutionClient` and its factory now provide account bootstrap, guarded
+submit/cancel hooks, and REST order/fill reconciliation reports; bulk submit, edit, and
+cancel-all remain explicitly unsupported at the Nautilus-client layer.
+
+The local [BitPin deprecation notice](deprecation-notice.html) deprecates four wallet v1 routes
+in favor of v2 routes: withdrawals, networks, deposit addresses, and deposits. The pinned SDK
+already targets those v2 routes. Wallet automation is outside the current product scope, so no
+runtime change is required; re-check the notice and the SDK spec before enabling wallet features.
+
 The reference source trees are stored under `references/`:
 
 - `references/nautilus_trader/`
 - `references/bitpin-sdk/`
+
+The first read-only probe on 2026-11-15 produced these protocol observations:
+
+- BitPin returned `USDT/IRT`, `BTC/IRT`, and `BTC/USDT`, but not `USDT/BTC`. The initial market slice keeps `USDT/BTC` as the product requirement until the owner confirms whether it is a requested canonical orientation or a naming alias for the exchange's `BTC/USDT` market.
+- The owner confirmed that `USDT/BTC` is a product naming alias for BitPin's canonical `BTC/USDT`. The adapter resolves the alias for market selection, retains `BTC_USDT.BITPIN` as the exchange identity, and does not invert prices or order sides.
+- Authenticated read-only calls for balances, open orders, recent fills, commissions, and market suspensions all completed successfully. The account had no open orders at capture time.
+- The market-suspension endpoint marked every returned market as suspended for this account at capture time. Its semantics must be understood before it is used as a market-eligibility input.
+- Ticker responses contained last prices but no bid, ask, or quote-size fields for the observed markets. The parser therefore derives `QuoteTick` values from order-book snapshots and rejects incomplete ticker mappings.
+- A public WebSocket probe on `BTC/IRT` received an order-book update and `1m` candle updates. Ticker and trade streams timed out over a 10-second observation window; repeat probes with a longer window are needed before treating that as a capability failure.
+
+The suspension observation came from the authenticated SDK call `fetch_market_suspensions()`,
+which invokes `GET /api/v1/mkt/markets/suspensions/` (`private_get_mkt_markets_suspensions`).
+The support question is: “For an authenticated API key, what exactly does this endpoint's
+boolean flag indicate—global suspension, account-level suspension, or product/service
+availability—and why would all returned markets be `true`?”
+
+The live write probe answered the operational question without requiring support contact. On
+`BTC/USDT`, the public market record was `active=True` and the private suspension flag was
+`true`; a valid-precision limit buy was rejected with HTTP 400 `InvalidOrder` and the detail
+“The specified market is currently suspended.” No order was created, and the post-probe account
+still had 9.26 USDT free with zero open orders. The execution gate therefore requires an
+explicit `suspended=False` result before submitting any order; missing status is also blocked.
+
+A second probe bypassed the SDK entirely: direct authentication followed by raw
+`POST /api/v1/odr/orders/` with the same `BTC_USDT` order body returned the same HTTP 400
+“The specified market is currently suspended.” This confirms the restriction is enforced by
+BitPin's API and is not an SDK translation issue.
+
+The owner then completed a successful `0.50 USDT/IRT` trade through the BitPin UI. A fresh
+authenticated probe still returned `suspended=True` for every sampled market, and a raw API
+`USDT_IRT` control order was also rejected with the same 400 response. The evidence therefore
+shows an API-channel restriction, not a global trading halt: UI trading works, but the current
+API order path does not. The exact UI/API execution-path difference remains to be identified.
+
+On 2026-11-15, BitPin support confirmed that the all-markets-suspended response means the API
+is undergoing updates. The adapter now classifies an all-`true` suspension map as API
+maintenance and blocks submissions with a maintenance-specific error; a partial map still
+blocks only the flagged market.
+
+The pinned SDK design explicitly scopes itself to BitPin `/api/` routes and excludes richer web
+application routes such as `/v1/`, `/v4/`, `/srv/`, `/crm/`, and `/tp/`. The UI may therefore be
+using a different service or permission path; the adapter will not depend on an undocumented UI
+route without an official contract.
 
 ## Agreed scope
 

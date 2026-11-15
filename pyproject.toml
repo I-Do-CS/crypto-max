@@ -17,6 +17,7 @@ dependencies = [
 
 [project.scripts]
 crypto-max = "crypto_max:main"
+crypto-max-probe = "crypto_max.probe:main"
 
 [build-system]
 requires = ["uv_build>=0.13.8,<0.14.0"]
@@ -28,3 +29,6 @@ dev = [
     "pytest-asyncio>=1.5.0",
     "ruff>=0.17.5",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,236 @@
+"""Nautilus v2 execution client backed by the guarded BitPin execution gateway."""
+
+from __future__ import annotations
+
+from typing import Any, override
+
+from bitpin_sdk import errors as bitpin_errors
+from nautilus_trader import live, model
+from nautilus_trader.live.clients import ExecutionClient
+from nautilus_trader.model import (
+    AccountId,
+    AccountType,
+    InstrumentId,
+    LiquiditySide,
+    OmsType,
+    OrderType,
+    TraderId,
+    Venue,
+    VenueOrderId,
+)
+
+from .execution_gateway import BitpinExecutionGateway
+from .execution_mapping import (
+    ExecutionMappingError,
+    account_balances_from_bitpin,
+    fill_report_from_bitpin,
+    order_status_report_from_bitpin,
+)
+from .market_policy import canonical_product_symbol, native_market_id
+
+
+class BitpinExecutionClient(ExecutionClient):
+    """Execution hooks with explicit account and write-policy boundaries."""
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        config: Any,
+        cache: Any,
+        clock: Any,
+        trader_id: TraderId,
+        account_id: AccountId,
+        gateway: BitpinExecutionGateway,
+        instrument_provider: Any,
+        venue: Venue,
+    ) -> None:
+        super().__init__(
+            name=name,
+            config=config,
+            cache=cache,
+            clock=clock,
+            trader_id=trader_id,
+            venue=venue,
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            oms_type=OmsType.NETTING,
+            instrument_provider=instrument_provider,
+        )
+        self._gateway = gateway
+
+    async def _connect(self) -> None:
+        await self._gateway.connect()
+        await self._emit_account_state()
+
+    async def _disconnect(self) -> None:
+        await self._gateway.close()
+
+    async def _emit_account_state(self) -> None:
+        balances = await self._gateway.client.fetch_balance()
+        self.generate_account_state(
+            balances=account_balances_from_bitpin(balances),
+            margins=[],
+            reported=True,
+            ts_event=self.clock.timestamp_ns(),
+        )
+
+    def _instrument_id_for_symbol(self, symbol: str) -> InstrumentId:
+        native = native_market_id(canonical_product_symbol(symbol))
+        return InstrumentId.from_str(f"{native}.BITPIN")
+
+    @staticmethod
+    def _order_arguments(order: Any) -> tuple[str, str, str, str | None]:
+        order_type = {
+            OrderType.LIMIT: "limit",
+            OrderType.MARKET: "market",
+            OrderType.STOP_LIMIT: "stop_limit",
+        }.get(order.order_type)
+        if order_type is None:
+            raise ExecutionMappingError(
+                f"unsupported Nautilus order type: {order.order_type}"
+            )
+        return (
+            order_type,
+            order.side.name.lower(),
+            str(order.quantity),
+            (str(order.price) if order.price is not None else None),
+        )
+
+    @override
+    async def _submit_order(self, command: live.SubmitOrder) -> None:
+        order = command.order
+        try:
+            order_type, side, amount, price = self._order_arguments(order)
+            created = await self._gateway.submit_order(
+                instrument_id=order.instrument_id,
+                order_type=order_type,
+                side=side,
+                amount=amount,
+                price=price,
+                client_order_id=str(order.client_order_id),
+                params=dict(command.params or {}),
+            )
+        except (ExecutionMappingError, bitpin_errors.InvalidOrder) as exc:
+            self.generate_order_rejected(
+                order, str(exc), self.clock.timestamp_ns(), False
+            )
+            return
+        self.generate_order_submitted(order)
+        self.generate_order_accepted(
+            order,
+            VenueOrderId(str(created["id"])),
+            self.clock.timestamp_ns(),
+        )
+
+    @override
+    async def _cancel_order(self, command: live.CancelOrder) -> None:
+        order = self.cache.order(command.client_order_id)
+        try:
+            await self._gateway.cancel_by_identifier(str(command.client_order_id))
+        except Exception as exc:  # noqa: BLE001 - convert venue failure into order event
+            self.generate_order_rejected(
+                order, str(exc), self.clock.timestamp_ns(), False
+            )
+            return
+        self.generate_order_canceled(
+            order, command.venue_order_id, self.clock.timestamp_ns()
+        )
+
+    @override
+    async def _query_account(self, command: live.QueryAccount) -> None:
+        await self._emit_account_state()
+
+    @override
+    async def _query_order(self, command: live.QueryOrder) -> None:
+        raw = await self._gateway.client.fetch_order(str(command.venue_order_id))
+        self._handle_report(
+            order_status_report_from_bitpin(
+                raw,
+                account_id=self.account_id,
+                instrument_id=command.instrument_id,
+                ts_init=self.clock.timestamp_ns(),
+            )
+        )
+
+    @override
+    async def _generate_order_status_report(
+        self,
+        command: live.GenerateOrderStatusReport,
+    ) -> model.OrderStatusReport | None:
+        raw = await self._gateway.client.fetch_order(str(command.venue_order_id))
+        return order_status_report_from_bitpin(
+            raw,
+            account_id=self.account_id,
+            instrument_id=command.instrument_id,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+    @override
+    async def _generate_order_status_reports(
+        self,
+        command: live.GenerateOrderStatusReports,
+    ) -> list[model.OrderStatusReport]:
+        reports = []
+        for order in await self._gateway.client.fetch_open_orders():
+            reports.append(
+                order_status_report_from_bitpin(
+                    order,
+                    account_id=self.account_id,
+                    instrument_id=self._instrument_id_for_symbol(str(order["symbol"])),
+                    ts_init=self.clock.timestamp_ns(),
+                )
+            )
+        return reports
+
+    @override
+    async def _generate_fill_reports(
+        self,
+        command: live.GenerateFillReports,
+    ) -> list[model.FillReport]:
+        reports = []
+        for trade in await self._gateway.client.fetch_my_trades(limit=250):
+            reports.append(
+                fill_report_from_bitpin(
+                    trade,
+                    account_id=self.account_id,
+                    instrument_id=self._instrument_id_for_symbol(str(trade["symbol"])),
+                    ts_init=self.clock.timestamp_ns(),
+                )
+            )
+        return reports
+
+    @override
+    async def _generate_position_status_reports(
+        self,
+        command: live.GeneratePositionStatusReports,
+    ) -> list[model.PositionStatusReport]:
+        return []
+
+    @override
+    async def _modify_order(self, command: live.ModifyOrder) -> None:
+        raise NotImplementedError("BitPin does not provide native editOrder")
+
+    @override
+    async def _cancel_all_orders(self, command: live.CancelAllOrders) -> None:
+        raise NotImplementedError("BitPin does not provide native cancelAllOrders")
+
+    @override
+    async def _submit_order_list(self, command: live.SubmitOrderList) -> None:
+        raise NotImplementedError(
+            "Bulk order execution is not wired to the Nautilus client yet"
+        )
+
+    @override
+    def _handles_order_venue(self, venue: Venue | None) -> bool:
+        return venue == self.venue
+
+    @override
+    def _calculate_commission(
+        self,
+        instrument: object,
+        last_qty: model.Quantity,
+        last_px: model.Price,
+        liquidity_side: LiquiditySide,
+    ) -> model.Money | None:
+        return None
