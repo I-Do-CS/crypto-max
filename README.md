@@ -20,6 +20,9 @@ The probe harness is available as `crypto-max-probe`. It reads credentials only 
 
 The current mapping contract is maintained in [docs/bitpin-integration-contract.md](docs/bitpin-integration-contract.md). It separates confirmed SDK/Nautilus mappings from exchange behavior that still requires evidence.
 
+The post-maintenance live validation procedure is documented in
+[docs/post-maintenance-smoke-test.md](docs/post-maintenance-smoke-test.md).
+
 Pure currency and spot-instrument mappings are implemented in `crypto_max.mapping` and
 validated against the captured `IRT`, `USDT`, `BTC`, `USDT/IRT`, `BTC/IRT`, and `BTC/USDT`
 records. The mapping registers `IRT` as a custom fiat currency before constructing

@@ -197,6 +197,9 @@ The pinned BitPin SDK spec already uses the replacement routes. Wallet automatio
 withdrawals remain outside the current scope, so this notice does not change the active adapter
 surface. Re-validate the SDK/spec before that scope is reopened.
 
+The controlled live validation sequence after maintenance is documented in
+[docs/post-maintenance-smoke-test.md](post-maintenance-smoke-test.md).
+
 ## Errors, retries, and rate limits
 
 - Treat authentication failures, permission failures, invalid orders, not-found responses,
