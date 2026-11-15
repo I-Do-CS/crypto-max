@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any, override
 
+from bitpin_sdk import errors as bitpin_errors
 from nautilus_trader import live
 from nautilus_trader.live.clients import MarketDataClient
 from nautilus_trader.model import BarType, InstrumentId, Venue
@@ -81,28 +82,41 @@ class BitpinDataClient(MarketDataClient):
 
     async def _quote_loop(self, instrument_id: InstrumentId) -> None:
         while True:
-            quote = await self._gateway.watch_quote(instrument_id, timeout=30)
+            try:
+                quote = await self._gateway.watch_quote(instrument_id, timeout=30)
+            except bitpin_errors.RequestTimeout:
+                continue
             self._handle_data(quote)
 
     async def _trade_loop(self, instrument_id: InstrumentId) -> None:
         while True:
-            for trade in await self._gateway.watch_trades(instrument_id, timeout=30):
+            try:
+                trades = await self._gateway.watch_trades(instrument_id, timeout=30)
+            except bitpin_errors.RequestTimeout:
+                continue
+            for trade in trades:
                 self._handle_data(trade)
 
     async def _book_loop(self, instrument_id: InstrumentId) -> None:
         while True:
-            self._handle_data(
-                await self._gateway.watch_order_book(instrument_id, timeout=30)
-            )
+            try:
+                depth = await self._gateway.watch_order_book(instrument_id, timeout=30)
+            except bitpin_errors.RequestTimeout:
+                continue
+            self._handle_data(depth)
 
     async def _bar_loop(self, bar_type: BarType) -> None:
         timeframe = _timeframe_from_bar_type(bar_type)
         while True:
-            for bar in await self._gateway.watch_bars(
-                bar_type.instrument_id,
-                timeframe,
-                timeout=30,
-            ):
+            try:
+                bars = await self._gateway.watch_bars(
+                    bar_type.instrument_id,
+                    timeframe,
+                    timeout=30,
+                )
+            except bitpin_errors.RequestTimeout:
+                continue
+            for bar in bars:
                 self._handle_data(bar)
 
     @override
