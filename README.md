@@ -109,6 +109,12 @@ application routes such as `/v1/`, `/v4/`, `/srv/`, `/crm/`, and `/tp/`. The UI 
 using a different service or permission path; the adapter will not depend on an undocumented UI
 route without an official contract.
 
+The rendered API docs contain two unresolved contract conflicts: the market response documents
+`tradable` and precision but omits suspension semantics, and the order page lists 5,400 create
+requests per hour while the pinned SDK spec lists 18,000. These values remain evidence items;
+the adapter must not treat `tradable` as suspension state or silently claim either rate limit is
+authoritative.
+
 ## Agreed scope
 
 ### Current product scope

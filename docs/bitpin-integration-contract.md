@@ -171,6 +171,12 @@ web-app routes such as `/v1/`, `/v4/`, `/srv/`, `/crm/`, and `/tp/`, even when t
 behavior. This is the leading explanation for UI/API divergence, but the exact UI route is not
 part of the adapter contract and must not be guessed.
 
+The rendered market documentation describes `tradable` and precision but does not define the
+private suspension endpoint. The rendered order page also lists 5,400 create-order requests per
+hour, while the pinned SDK spec lists 18,000. Keep both discrepancies explicit and configurable;
+do not infer suspension state from `tradable` or silently promote one rate-limit source over the
+other.
+
 `BitpinExecutionClient` now exposes the initial Nautilus execution hooks for account bootstrap,
 submit, cancel, query, and REST order/fill reports. Bulk submit, edit, cancel-all, and full node
 integration testing remain open work.
