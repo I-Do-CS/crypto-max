@@ -268,7 +268,18 @@ class BitpinExecutionClient(ExecutionClient):
         command: live.GenerateFillReports,
     ) -> list[model.FillReport]:
         reports = []
-        for trade in await self._gateway.client.fetch_my_trades(limit=250):
+        params: dict[str, Any] = {"limit": 250}
+        if command.instrument_id is not None:
+            params["symbol"] = _native_symbol(command.instrument_id)
+        if command.start is not None:
+            if command.start < 0:
+                raise ValueError("fill report start must be non-negative")
+            params["since"] = command.start // 1_000_000
+        for trade in await self._gateway.client.fetch_my_trades(**params):
+            if command.venue_order_id is not None and str(trade.get("order")) != str(
+                command.venue_order_id
+            ):
+                continue
             instrument_id = self._instrument_id_for_symbol(str(trade["symbol"]))
             report = fill_report_from_bitpin(
                 trade,
@@ -285,6 +296,10 @@ class BitpinExecutionClient(ExecutionClient):
                 payload=dict(trade),
                 event_time_ns=report.ts_event,
             )
+            if command.start is not None and report.ts_event < command.start:
+                continue
+            if command.end is not None and report.ts_event > command.end:
+                continue
             reports.append(report)
         return reports
 
@@ -322,3 +337,9 @@ class BitpinExecutionClient(ExecutionClient):
         liquidity_side: LiquiditySide,
     ) -> model.Money | None:
         return None
+
+
+def _native_symbol(instrument_id: InstrumentId) -> str:
+    """Convert a Nautilus native BitPin instrument ID to the SDK symbol form."""
+
+    return str(instrument_id).split(".", 1)[0].replace("_", "/", 1)
