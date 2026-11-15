@@ -38,7 +38,7 @@ SubmissionErrorKind = Literal["denied", "rejected", "unknown"]
 def classify_submission_error(error: Exception) -> SubmissionErrorKind:
     """Classify deterministic order failures without hiding ambiguous transport outcomes."""
 
-    if isinstance(error, MarketSuspensionError):
+    if isinstance(error, (MarketSuspensionError, ExecutionGatewayStateError)):
         return "denied"
     if isinstance(
         error,

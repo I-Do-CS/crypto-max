@@ -25,6 +25,9 @@ def test_execution_client_and_factory_are_importable_v2_components() -> None:
 
 def test_submission_error_classification_preserves_unknown_outcomes() -> None:
     assert classify_submission_error(MarketSuspensionError("maintenance")) == "denied"
+    assert classify_submission_error(ExecutionGatewayStateError("disabled")) == (
+        "denied"
+    )
     assert (
         classify_submission_error(bitpin_errors.InvalidOrder("bad order")) == "rejected"
     )
