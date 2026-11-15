@@ -5,10 +5,12 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
 
 from crypto_max.probe import (
     CredentialFiles,
+    HttpExchangeRecorder,
     ProbeConfigurationError,
     ProbeRecorder,
     _write_capture,
@@ -86,3 +88,34 @@ def test_async_recorder_captures_awaited_result() -> None:
 
     assert recorder.operations[0]["ok"] is True
     assert recorder.operations[0]["result"]["normalized"] == {"value": "ok"}
+
+
+def test_http_exchange_recorder_captures_sanitized_metadata() -> None:
+    recorder = HttpExchangeRecorder()
+    recorder.active_operation = "mock.request"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            headers={"retry-after": "3", "x-secret": "omit"},
+            json={"detail": "bad"},
+            request=request,
+        )
+
+    with httpx.Client(
+        transport=httpx.MockTransport(handler),
+        event_hooks={
+            "request": [recorder.on_request],
+            "response": [recorder.on_response],
+        },
+    ) as client:
+        client.get("https://example.test/api/v1/example/", params={"page": "1"})
+
+    exchange = recorder.exchanges[0]
+    assert exchange["operation"] == "mock.request"
+    assert exchange["request"]["method"] == "GET"
+    assert exchange["request"]["path"] == "/api/v1/example/"
+    assert exchange["response"]["status_code"] == 400
+    assert exchange["response"]["headers"]["retry-after"] == "3"
+    assert "x-secret" not in exchange["response"]["headers"]
+    assert "started_clock" not in exchange

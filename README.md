@@ -16,7 +16,7 @@ The current local environment has been checked:
 - `uv pip check` passes
 - Nautilus custom Python adapter imports are available
 
-The probe harness is available as `crypto-max-probe`. It reads credentials only at runtime from `~/bitpin/api-key.txt` and `~/bitpin/secret-key.txt`, writes secret-redacted captures under the gitignored `data/bitpin-probes/` directory with mode `0600`, and records SDK version, endpoint parameters, timing, errors, normalized results, and raw payloads retained by the SDK. Optional public WebSocket capture uses the SDK's asynchronous client and records stream timeouts; richer HTTP response metadata, pagination evidence, and rate-limit observations remain subsequent probe work.
+The probe harness is available as `crypto-max-probe`. It reads credentials only at runtime from `~/bitpin/api-key.txt` and `~/bitpin/secret-key.txt`, writes secret-redacted captures under the gitignored `data/bitpin-probes/` directory with mode `0600`, and records SDK version, endpoint parameters, timing, errors, normalized results, raw payloads retained by the SDK, and sanitized HTTP method/path/status/header metadata. Optional public WebSocket capture uses the SDK's asynchronous client and records stream timeouts; pagination evidence remains subsequent probe work.
 
 The current mapping contract is maintained in [docs/bitpin-integration-contract.md](docs/bitpin-integration-contract.md). It separates confirmed SDK/Nautilus mappings from exchange behavior that still requires evidence.
 

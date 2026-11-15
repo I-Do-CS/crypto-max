@@ -19,8 +19,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
+import httpx
 from bitpin_sdk import AsyncBitpin, Bitpin, Config, FileTokenStore
 from bitpin_sdk import __version__ as bitpin_sdk_version
 
@@ -116,11 +117,94 @@ def _raw_from_result(value: Any) -> Any:
     return None
 
 
+class HttpExchangeRecorder:
+    """Record sanitized request/response metadata for deterministic probe diagnostics."""
+
+    _RESPONSE_HEADERS: ClassVar[set[str]] = {
+        "content-length",
+        "content-type",
+        "date",
+        "retry-after",
+        "ratelimit-limit",
+        "ratelimit-remaining",
+        "ratelimit-reset",
+        "x-ratelimit-limit",
+        "x-ratelimit-remaining",
+        "x-ratelimit-reset",
+    }
+
+    def __init__(self) -> None:
+        self.active_operation: str | None = None
+        self.exchanges: list[dict[str, Any]] = []
+
+    def on_request(self, request: httpx.Request) -> None:
+        index = len(self.exchanges)
+        request.extensions["crypto_max_probe_exchange"] = index
+        self.exchanges.append(
+            {
+                "operation": self.active_operation,
+                "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                "started_clock": time.perf_counter(),
+                "request": {
+                    "method": request.method,
+                    "path": request.url.path,
+                    "params": _redact(
+                        _jsonable(dict(request.url.params.multi_items()))
+                    ),
+                    "content_length": len(request.content),
+                },
+            }
+        )
+
+    def on_response(self, response: httpx.Response) -> None:
+        index = response.request.extensions.get("crypto_max_probe_exchange")
+        if not isinstance(index, int) or index >= len(self.exchanges):
+            return
+        exchange = self.exchanges[index]
+        started_clock = exchange.pop("started_clock", time.perf_counter())
+        exchange["duration_ms"] = round((time.perf_counter() - started_clock) * 1000, 3)
+        exchange["response"] = {
+            "status_code": response.status_code,
+            "headers": {
+                key: value
+                for key, value in response.headers.items()
+                if key.lower() in self._RESPONSE_HEADERS
+            },
+            "content_length": len(response.content),
+        }
+
+
+class _ProbeBitpinClient:
+    """Own the injected HTTP client without changing Bitpin SDK lifecycle code."""
+
+    def __init__(self, config: Config, recorder: HttpExchangeRecorder) -> None:
+        self._http_recorder = recorder
+        self._http = httpx.Client(
+            timeout=config.timeout,
+            event_hooks={
+                "request": [recorder.on_request],
+                "response": [recorder.on_response],
+            },
+        )
+        self._client = Bitpin(config, http_client=self._http)
+
+    def __enter__(self) -> Bitpin:
+        self._client.__enter__()
+        return self._client
+
+    def __exit__(self, *exc: object) -> None:
+        try:
+            self._client.__exit__(*exc)
+        finally:
+            self._http.close()
+
+
 class ProbeRecorder:
     """Collect operation results without allowing secrets into the capture."""
 
-    def __init__(self) -> None:
+    def __init__(self, http_recorder: HttpExchangeRecorder | None = None) -> None:
         self.operations: list[dict[str, Any]] = []
+        self.http_recorder = http_recorder
 
     def call(
         self,
@@ -133,6 +217,11 @@ class ProbeRecorder:
     ) -> Any | None:
         started = datetime.now(UTC)
         started_clock = time.perf_counter()
+        exchange_start = (
+            len(self.http_recorder.exchanges) if self.http_recorder is not None else 0
+        )
+        if self.http_recorder is not None:
+            self.http_recorder.active_operation = name
         record: dict[str, Any] = {
             "name": name,
             "category": category,
@@ -164,6 +253,9 @@ class ProbeRecorder:
                     },
                 }
             )
+        if self.http_recorder is not None:
+            self.http_recorder.active_operation = None
+            record["http_exchanges"] = self.http_recorder.exchanges[exchange_start:]
         record["duration_ms"] = round((time.perf_counter() - started_clock) * 1000, 3)
         self.operations.append(record)
         return result
@@ -300,8 +392,9 @@ def run_probe(
 ) -> dict[str, Any]:
     """Run public probes and, when configured, authenticated read-only probes."""
 
-    recorder = ProbeRecorder()
-    with Bitpin(config) as client:
+    http_recorder = HttpExchangeRecorder()
+    recorder = ProbeRecorder(http_recorder)
+    with _ProbeBitpinClient(config, http_recorder) as client:
         description = client.describe()
         markets = recorder.call(
             "public.markets",
