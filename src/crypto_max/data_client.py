@@ -66,10 +66,12 @@ class BitpinDataClient(MarketDataClient):
     async def _stop_streams(
         self, kind: str, instrument_ids: list[InstrumentId]
     ) -> None:
-        tasks = [
-            self._stream_tasks.pop((kind, str(instrument_id)), None)
-            for instrument_id in instrument_ids
-        ]
+        await self._stop_keys(
+            [(kind, str(instrument_id)) for instrument_id in instrument_ids]
+        )
+
+    async def _stop_keys(self, keys: list[tuple[str, str]]) -> None:
+        tasks = [self._stream_tasks.pop(key, None) for key in keys]
         active = [task for task in tasks if task is not None]
         for task in active:
             task.cancel()
@@ -148,9 +150,8 @@ class BitpinDataClient(MarketDataClient):
 
     @override
     async def _unsubscribe_bars(self, command: live.UnsubscribeBars) -> None:
-        await self._stop_streams(
-            "bars",
-            [bar_type.instrument_id for bar_type in command.bar_types],
+        await self._stop_keys(
+            [("bars", str(bar_type)) for bar_type in command.bar_types]
         )
 
     @override

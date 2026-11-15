@@ -9,7 +9,7 @@ from bitpin_sdk import AsyncBitpin, Config
 from nautilus_trader.model import InstrumentId
 
 from .instrument_provider import BitpinInstrumentProvider
-from .market_policy import require_orderable
+from .market_policy import canonical_product_symbol, native_market_id, require_orderable
 from .state_store import BitpinStateStore
 
 
@@ -128,7 +128,10 @@ class BitpinExecutionGateway:
     async def reconcile_open_orders(self) -> list[Mapping[str, Any]]:
         orders = await self.client.fetch_open_orders()
         for order in orders:
-            instrument_id = str(order.get("symbol") or "")
+            symbol = str(order.get("symbol") or "")
+            instrument_id = (
+                f"{native_market_id(canonical_product_symbol(symbol))}.BITPIN"
+            )
             self.state_store.upsert_order(
                 venue_order_id=str(order["id"]),
                 client_order_id=(

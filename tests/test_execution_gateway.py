@@ -66,7 +66,14 @@ class FakeAsyncBitpin:
         return {"id": "order-1", "clientOrderId": client_order_id}
 
     async def fetch_open_orders(self) -> list[dict[str, Any]]:
-        return []
+        return [
+            {
+                "id": "open-1",
+                "clientOrderId": "open-client-1",
+                "symbol": "BTC/IRT",
+                "status": "open",
+            }
+        ]
 
     async def close(self) -> None:
         pass
@@ -153,6 +160,22 @@ def test_disabled_gateway_never_submits(tmp_path: Path) -> None:
                 client_order_id="disabled-1",
             )
         assert client.create_calls == []
+        await gateway.close()
+
+    asyncio.run(run())
+
+
+def test_reconcile_open_orders_persists_canonical_nautilus_identity(
+    tmp_path: Path,
+) -> None:
+    gateway, _ = _gateway(tmp_path, suspended=False, write_enabled=False)
+
+    async def run() -> None:
+        await gateway.connect()
+        orders = await gateway.reconcile_open_orders()
+        assert len(orders) == 1
+        saved = gateway.state_store.order_by_client_id("open-client-1")
+        assert saved["instrument_id"] == "BTC_IRT.BITPIN"
         await gateway.close()
 
     asyncio.run(run())
