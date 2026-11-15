@@ -19,7 +19,7 @@ from nautilus_trader.model import (
     VenueOrderId,
 )
 
-from .execution_gateway import BitpinExecutionGateway
+from .execution_gateway import BitpinExecutionGateway, ExecutionGatewayStateError
 from .execution_mapping import (
     ExecutionMappingError,
     account_balances_from_bitpin,
@@ -47,6 +47,24 @@ def classify_submission_error(error: Exception) -> SubmissionErrorKind:
             bitpin_errors.BadRequest,
             bitpin_errors.InsufficientFunds,
             bitpin_errors.InvalidOrder,
+            bitpin_errors.PermissionDenied,
+        ),
+    ):
+        return "rejected"
+    return "unknown"
+
+
+def classify_cancellation_error(error: Exception) -> SubmissionErrorKind:
+    """Classify cancellation failures without hiding an ambiguous venue outcome."""
+
+    if isinstance(error, ExecutionGatewayStateError):
+        return "denied"
+    if isinstance(
+        error,
+        (
+            bitpin_errors.BadRequest,
+            bitpin_errors.InvalidOrder,
+            bitpin_errors.OrderNotFound,
             bitpin_errors.PermissionDenied,
         ),
     ):
@@ -159,10 +177,21 @@ class BitpinExecutionClient(ExecutionClient):
         order = self.cache.order(command.client_order_id)
         try:
             await self._gateway.cancel_by_identifier(str(command.client_order_id))
-        except Exception as exc:  # noqa: BLE001 - convert venue failure into order event
-            self.generate_order_rejected(
-                order, str(exc), self.clock.timestamp_ns(), False
-            )
+        except Exception as exc:
+            kind = classify_cancellation_error(exc)
+            if kind == "denied":
+                self.generate_order_cancel_denied(
+                    order, str(exc), self.clock.timestamp_ns()
+                )
+            elif kind == "rejected":
+                self.generate_order_cancel_rejected(
+                    order,
+                    command.venue_order_id,
+                    str(exc),
+                    self.clock.timestamp_ns(),
+                )
+            else:
+                raise
             return
         self.generate_order_canceled(
             order, command.venue_order_id, self.clock.timestamp_ns()
