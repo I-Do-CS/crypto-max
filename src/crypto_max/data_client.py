@@ -11,6 +11,7 @@ from nautilus_trader.live.clients import MarketDataClient
 from nautilus_trader.model import BarType, InstrumentId, Venue
 
 from .instrument_provider import BitpinInstrumentProvider
+from .market_data import order_book_from_depth
 from .market_gateway import BitpinMarketDataGateway
 
 
@@ -183,14 +184,13 @@ class BitpinDataClient(MarketDataClient):
 
     @override
     async def _request_book_snapshot(self, request: live.RequestBookSnapshot) -> None:
-        data = await self._gateway.fetch_order_book(
-            request.instrument_id,
-            limit=request.depth,
+        depth = await self._gateway.fetch_order_book(
+            request.instrument_id, limit=request.depth
         )
         response = live.BookResponse(
             client_id=self.client_id,
             instrument_id=request.instrument_id,
-            data=data,
+            data=order_book_from_depth(depth),
             correlation_id=request.request_id,
             ts_init=self.clock.timestamp_ns(),
             params=request.params,
@@ -254,10 +254,10 @@ class BitpinDataClient(MarketDataClient):
             request.instrument_id,
             limit=request.depth,
         )
-        response = live.BookResponse(
+        response = live.BookDepthResponse(
             client_id=self.client_id,
             instrument_id=request.instrument_id,
-            data=data,
+            data=[data],
             correlation_id=request.request_id,
             ts_init=self.clock.timestamp_ns(),
             params=request.params,

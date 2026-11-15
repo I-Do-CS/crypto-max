@@ -14,7 +14,9 @@ from nautilus_trader.model import (
     BarSpecification,
     BarType,
     BookOrder,
+    BookType,
     InstrumentId,
+    OrderBook,
     OrderBookDepth,
     OrderSide,
     Price,
@@ -204,6 +206,14 @@ def order_book_depth_from_bitpin(
         ts_event=event_ns,
         ts_init=event_ns if ts_init is None else ts_init,
     )
+
+
+def order_book_from_depth(depth: OrderBookDepth) -> OrderBook:
+    """Convert one venue depth snapshot into Nautilus's mutable snapshot type."""
+
+    book = OrderBook(depth.instrument_id, BookType.L2_MBP)
+    book.apply_depth(depth)
+    return book
 
 
 def _book_orders(
