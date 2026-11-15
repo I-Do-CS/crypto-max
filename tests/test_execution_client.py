@@ -78,3 +78,45 @@ def test_fill_reports_are_persisted_by_venue_fill_id() -> None:
     assert calls[0]["venue_order_id"] == "order-1"
     assert calls[0]["instrument_id"] == str(InstrumentId.from_str("BTC_IRT.BITPIN"))
     assert calls[0]["event_time_ns"] == 1_000 * 1_000_000
+
+
+def test_open_order_reports_are_persisted_by_venue_order_id() -> None:
+    calls: list[dict[str, object]] = []
+
+    class Client:
+        async def fetch_open_orders(self) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": "order-1",
+                    "clientOrderId": "client-1",
+                    "symbol": "BTC/IRT",
+                    "timestamp": 1_000,
+                    "lastTradeTimestamp": None,
+                    "type": "limit",
+                    "side": "buy",
+                    "price": "10",
+                    "stopPrice": None,
+                    "triggerPrice": None,
+                    "average": None,
+                    "amount": "0.1",
+                    "filled": "0",
+                    "status": "open",
+                }
+            ]
+
+    class Store:
+        def upsert_order(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+    client = object.__new__(BitpinExecutionClient)
+    client._gateway = SimpleNamespace(client=Client(), state_store=Store())
+    client.account_id = AccountId("BITPIN-ACCOUNT")
+    client.clock = SimpleNamespace(timestamp_ns=lambda: 2_000_000_000)
+
+    reports = asyncio.run(client._generate_order_status_reports(SimpleNamespace()))
+
+    assert len(reports) == 1
+    assert calls[0]["venue_order_id"] == "order-1"
+    assert calls[0]["client_order_id"] == "client-1"
+    assert calls[0]["instrument_id"] == str(InstrumentId.from_str("BTC_IRT.BITPIN"))
+    assert calls[0]["state"] == "open"

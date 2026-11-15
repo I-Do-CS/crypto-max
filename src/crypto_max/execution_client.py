@@ -204,14 +204,14 @@ class BitpinExecutionClient(ExecutionClient):
     @override
     async def _query_order(self, command: live.QueryOrder) -> None:
         raw = await self._gateway.client.fetch_order(str(command.venue_order_id))
-        self._handle_report(
-            order_status_report_from_bitpin(
-                raw,
-                account_id=self.account_id,
-                instrument_id=command.instrument_id,
-                ts_init=self.clock.timestamp_ns(),
-            )
+        report = order_status_report_from_bitpin(
+            raw,
+            account_id=self.account_id,
+            instrument_id=command.instrument_id,
+            ts_init=self.clock.timestamp_ns(),
         )
+        self._persist_order(raw, command.instrument_id)
+        self._handle_report(report)
 
     @override
     async def _generate_order_status_report(
@@ -219,12 +219,14 @@ class BitpinExecutionClient(ExecutionClient):
         command: live.GenerateOrderStatusReport,
     ) -> model.OrderStatusReport | None:
         raw = await self._gateway.client.fetch_order(str(command.venue_order_id))
-        return order_status_report_from_bitpin(
+        report = order_status_report_from_bitpin(
             raw,
             account_id=self.account_id,
             instrument_id=command.instrument_id,
             ts_init=self.clock.timestamp_ns(),
         )
+        self._persist_order(raw, command.instrument_id)
+        return report
 
     @override
     async def _generate_order_status_reports(
@@ -233,15 +235,32 @@ class BitpinExecutionClient(ExecutionClient):
     ) -> list[model.OrderStatusReport]:
         reports = []
         for order in await self._gateway.client.fetch_open_orders():
+            instrument_id = self._instrument_id_for_symbol(str(order["symbol"]))
             reports.append(
                 order_status_report_from_bitpin(
                     order,
                     account_id=self.account_id,
-                    instrument_id=self._instrument_id_for_symbol(str(order["symbol"])),
+                    instrument_id=instrument_id,
                     ts_init=self.clock.timestamp_ns(),
                 )
             )
+            self._persist_order(order, instrument_id)
         return reports
+
+    def _persist_order(
+        self, order: dict[str, Any], instrument_id: InstrumentId
+    ) -> None:
+        self._gateway.state_store.upsert_order(
+            venue_order_id=str(order["id"]),
+            client_order_id=(
+                str(order["clientOrderId"])
+                if order.get("clientOrderId") is not None
+                else None
+            ),
+            instrument_id=str(instrument_id),
+            state=str(order.get("status") or "unknown"),
+            payload=dict(order),
+        )
 
     @override
     async def _generate_fill_reports(
