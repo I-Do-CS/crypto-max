@@ -113,7 +113,8 @@ The rendered API docs contain two unresolved contract conflicts: the market resp
 `tradable` and precision but omits suspension semantics, and the order page lists 5,400 create
 requests per hour while the pinned SDK spec lists 18,000. These values remain evidence items;
 the adapter must not treat `tradable` as suspension state or silently claim either rate limit is
-authoritative.
+authoritative. Adapter configs now accept explicit SDK rate-limit overrides so the chosen value
+can follow verified evidence without a code change.
 
 ## Agreed scope
 

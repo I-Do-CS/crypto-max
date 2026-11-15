@@ -175,7 +175,8 @@ The rendered market documentation describes `tradable` and precision but does no
 private suspension endpoint. The rendered order page also lists 5,400 create-order requests per
 hour, while the pinned SDK spec lists 18,000. Keep both discrepancies explicit and configurable;
 do not infer suspension state from `tradable` or silently promote one rate-limit source over the
-other.
+other. `BitpinDataClientConfig` and `BitpinExecutionClientConfig` expose explicit SDK rate-limit
+overrides for this purpose.
 
 `BitpinExecutionClient` now exposes the initial Nautilus execution hooks for account bootstrap,
 submit, cancel, query, and REST order/fill reports. Bulk submit, edit, cancel-all, and full node

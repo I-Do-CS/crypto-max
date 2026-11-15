@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from bitpin_sdk import Config
@@ -21,6 +22,7 @@ class BitpinDataClientConfig(DataClientConfig):
         domain: str = "org",
         credentials_dir: str | Path = DEFAULT_CREDENTIALS_DIR,
         timeout: float = 10.0,
+        rate_limits: Mapping[str, str] | None = None,
         **kwargs: object,
     ) -> None:
         # The installed PyO3 base binding cannot forward nested kwargs through a Python
@@ -32,6 +34,7 @@ class BitpinDataClientConfig(DataClientConfig):
         self.domain = domain
         self.credentials_dir = str(credentials_dir)
         self.timeout = float(timeout)
+        self.rate_limits = dict(rate_limits or {})
 
 
 class BitpinExecutionClientConfig(ExecutionClientConfig):
@@ -45,6 +48,7 @@ class BitpinExecutionClientConfig(ExecutionClientConfig):
         timeout: float = 10.0,
         state_path: str | Path = Path("data/bitpin-state.sqlite"),
         write_enabled: bool = False,
+        rate_limits: Mapping[str, str] | None = None,
         **kwargs: object,
     ) -> None:
         kwargs.pop("instrument_provider", None)
@@ -55,6 +59,7 @@ class BitpinExecutionClientConfig(ExecutionClientConfig):
         self.timeout = float(timeout)
         self.state_path = str(state_path)
         self.write_enabled = bool(write_enabled)
+        self.rate_limits = dict(rate_limits or {})
 
 
 def bitpin_sdk_config(
@@ -72,4 +77,5 @@ def bitpin_sdk_config(
         secret_key=credentials[1] if credentials else None,
         domain=config.domain,  # type: ignore[arg-type]
         timeout=config.timeout,
+        rate_limits=config.rate_limits,
     )

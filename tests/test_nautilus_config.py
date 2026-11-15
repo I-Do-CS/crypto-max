@@ -20,10 +20,12 @@ def test_configs_serialize_paths_and_flags_without_secrets(tmp_path: Path) -> No
     execution_config = BitpinExecutionClientConfig(
         state_path=tmp_path / "state.sqlite",
         write_enabled=True,
+        rate_limits={"order_create": "5400/hour"},
     )
 
     assert data_config.dict()["domain"] == "ir"
     assert execution_config.dict()["write_enabled"] is True
+    assert execution_config.dict()["rate_limits"] == {"order_create": "5400/hour"}
     assert "secret" not in execution_config.json().decode().lower()
 
 
@@ -33,6 +35,15 @@ def test_sdk_config_is_public_by_default_and_authenticated_only_when_requested(
     config = BitpinDataClientConfig(credentials_dir=tmp_path)
     public = bitpin_sdk_config(config, authenticated=False)
     assert public.has_credentials is False
+
+
+def test_rate_limit_overrides_reach_sdk_config(tmp_path: Path) -> None:
+    config = BitpinExecutionClientConfig(
+        credentials_dir=tmp_path,
+        rate_limits={"order_create": "5400/hour"},
+    )
+    sdk_config = bitpin_sdk_config(config, authenticated=False)
+    assert sdk_config.rate_limit("order_create").limit == 5400
 
 
 def test_bar_type_timeframe_mapping() -> None:
