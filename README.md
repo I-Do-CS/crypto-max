@@ -1,61 +1,26 @@
 # Crypto Max
 
-**An evidence-driven Bitpin spot-market adapter for NautilusTrader.**
+A Bitpin spot exchange adapter for NautilusTrader. It translates Bitpin’s REST and WebSocket data into NautilusTrader instruments and market events, and uses SQLite to track order and fill identities across reconciliation runs.
 
-`Python 3.14+` · `NautilusTrader` · `REST` · `WebSocket` · `SQLite`
+## Inside the adapter
 
-Crypto Max explores the infrastructure for a single-user algorithmic trading platform, focusing on accurate exchange integration, typed market data, deterministic verification and recoverable local state.
-
-## Integration architecture
-
-| Component | Responsibility |
+| Area | What it does |
 | --- | --- |
-| Instrument provider | Currency and spot-instrument registration |
-| Market-data gateway | Async SDK boundary, REST and public WebSocket streams |
-| Data client | Typed history, quotes, trades, candles and order books |
-| Execution client | Order, fill and balance mapping and reconciliation |
-| Execution gateway | Explicit write-enable and suspension gating |
-| State store | SQLite order identities, fill IDs and reconciliation checkpoints |
-| Probe and tests | Evidence capture and fixture-based verification |
+| Market data | The [market gateway](src/crypto_max/market_gateway.py) handles exchange transport. The [data client](src/crypto_max/data_client.py) maps quotes, trades, candles and order books into framework types. |
+| Execution | The [execution client](src/crypto_max/execution_client.py) maps order and fill events. The [execution gateway](src/crypto_max/execution_gateway.py) controls writes to the exchange. |
+| Reconciliation | The [state store](src/crypto_max/state_store.py) persists client and venue order IDs, fill IDs and reconciliation checkpoints. |
 
-```mermaid
-flowchart LR
-    N[NautilusTrader] <--> Data[Data client]
-    N <--> Exec[Execution client]
-    Data <--> MG[Market gateway]
-    Exec <--> EG[Execution gateway]
-    EG <--> State[(SQLite state)]
-    MG <--> SDK[Bitpin SDK]
-    EG <--> SDK
-    SDK <--> Exchange[Bitpin API]
-```
+The [integration contract](docs/bitpin-integration-contract.md) records how the adapter handles instrument IDs, native IRT pricing and exchange-specific behavior.
 
-## Design
+## Run the tests
 
-- Separate exchange protocol mapping from market-selection policy.
-- Preserve native IRT units, instrument identities and decimal precision.
-- Reconcile execution outcomes and duplicate events through persistent state.
-- Keep unsupported exchange capabilities explicit.
-
-## Local development
-
-Install Python 3.14+ and [uv](https://docs.astral.sh/uv/).
+Use Python 3.14+ and [uv](https://docs.astral.sh/uv/). From the repository root:
 
 ```bash
-git clone https://github.com/I-Do-CS/crypto-max.git
-cd crypto-max
 uv sync --locked
 uv run pytest
 ```
 
-Start with fixture-backed tests. Live execution remains under validation; this is a development project, not a production trading system.
+Start with the [checked-in fixtures](tests/fixtures/bitpin/) and [adapter tests](tests/). Live execution is still under validation.
 
-## Documentation
-
-- [Integration contract](docs/bitpin-integration-contract.md)
-- [Smoke test](docs/post-maintenance-smoke-test.md)
-- [Wallet endpoint changes](docs/bitpin-wallet-deprecations.md)
-- [Integration modules](src/crypto_max/)
-- [Test suite](tests/)
-
-Independent, AI-assisted project by [Ali Ghelichkhani](https://github.com/I-Do-CS).
+Independent project developed with AI assistance.
